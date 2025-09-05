@@ -1,0 +1,581 @@
+// sidebar.js - Firefox Sidebar Logic
+
+class ClaudeSidebar {
+    constructor() {
+        this.currentTab = null;
+        this.conversations = [];
+        this.currentConversationId = null;
+        this.isProcessing = false;
+        this.browserInfo = {};
+        
+        this.init();
+    }
+
+    async init() {
+        // Get current browser tab
+        await this.getCurrentTab();
+        
+        // Load saved data
+        await this.loadConversations();
+        
+        // Setup event listeners
+        this.setupEventListeners();
+        
+        // Initialize conversation
+        if (this.conversations.length === 0) {
+            this.createNewConversation();
+        } else {
+            this.loadConversation(this.conversations[0].id);
+        }
+        
+        // Load page info
+        await this.loadPageInfo();
+        
+        // Load history
+        await this.loadHistory();
+        
+        // Load bookmarks  
+        await this.loadBookmarks();
+        
+        // Show welcome message
+        this.showWelcomeMessage();
+        
+        // Listen for tab changes
+        browser.tabs.onActivated.addListener(() => {
+            this.getCurrentTab().then(() => this.loadPageInfo());
+        });
+        
+        browser.tabs.onUpdated.addListener(() => {
+            this.getCurrentTab().then(() => this.loadPageInfo());
+        });
+    }
+
+    setupEventListeners() {
+        // Send button
+        document.getElementById('sendBtn').addEventListener('click', () => this.sendMessage());
+        
+        // Input field
+        const input = document.getElementById('messageInput');
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.sendMessage();
+            }
+        });
+        
+        // Model selector
+        document.getElementById('modelSelect').addEventListener('change', (e) => {
+            this.updateModelIndicator(e.target.value);
+            this.saveSettings();
+        });
+        
+        // Settings toggles
+        document.getElementById('autoCapture').addEventListener('change', () => this.saveSettings());
+        document.getElementById('darkMode').addEventListener('change', () => this.toggleTheme());
+        document.getElementById('syncEnabled').addEventListener('change', () => this.toggleSync());
+    }
+
+    async getCurrentTab() {
+        const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+        if (tabs.length > 0) {
+            this.currentTab = tabs[0];
+            return tabs[0];
+        }
+        return null;
+    }
+
+    async loadPageInfo() {
+        if (!this.currentTab) return;
+        
+        document.getElementById('pageTitle').textContent = this.currentTab.title || 'Senza titolo';
+        document.getElementById('pageUrl').textContent = this.currentTab.url || '';
+        
+        // Get page stats
+        try {
+            const results = await browser.tabs.executeScript(this.currentTab.id, {
+                code: `
+                    ({
+                        wordCount: document.body.innerText.split(/\\s+/).length,
+                        imageCount: document.images.length,
+                        linkCount: document.links.length,
+                        formCount: document.forms.length,
+                        loadTime: performance.timing.loadEventEnd - performance.timing.navigationStart,
+                        memory: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : 0
+                    })
+                `
+            });
+            
+            if (results && results[0]) {
+                const stats = results[0];
+                document.getElementById('pageStats').innerHTML = `
+                    <div>📝 Parole: ${stats.wordCount.toLocaleString()}</div>
+                    <div>🖼️ Immagini: ${stats.imageCount}</div>
+                    <div>🔗 Link: ${stats.linkCount}</div>
+                    <div>📋 Form: ${stats.formCount}</div>
+                    <div>⚡ Caricamento: ${stats.loadTime}ms</div>
+                    ${stats.memory ? `<div>💾 Memoria: ${stats.memory}MB</div>` : ''}
+                `;
+            }
+        } catch (error) {
+            console.log('Cannot access page stats:', error);
+        }
+    }
+
+    async loadHistory() {
+        try {
+            const history = await browser.history.search({
+                text: '',
+                maxResults: 20,
+                startTime: Date.now() - (7 * 24 * 60 * 60 * 1000) // Last 7 days
+            });
+            
+            const historyList = document.getElementById('historyList');
+            historyList.innerHTML = '';
+            
+            history.forEach(item => {
+                const historyItem = document.createElement('div');
+                historyItem.className = 'history-item';
+                historyItem.innerHTML = `
+                    <div class="history-date">${new Date(item.lastVisitTime).toLocaleString('it-IT')}</div>
+                    <div class="history-preview">${item.title || item.url}</div>
+                `;
+                historyItem.onclick = () => this.askAboutUrl(item.url, item.title);
+                historyList.appendChild(historyItem);
+            });
+        } catch (error) {
+            console.log('Cannot load history:', error);
+        }
+    }
+
+    async loadBookmarks() {
+        try {
+            const bookmarks = await browser.bookmarks.getRecent(20);
+            
+            const bookmarksList = document.getElementById('bookmarksList');
+            bookmarksList.innerHTML = '';
+            
+            bookmarks.forEach(bookmark => {
+                if (bookmark.url) { // Only show actual bookmarks, not folders
+                    const bookmarkItem = document.createElement('div');
+                    bookmarkItem.className = 'history-item';
+                    bookmarkItem.innerHTML = `
+                        <div class="history-date">⭐ Preferito</div>
+                        <div class="history-preview">${bookmark.title}</div>
+                    `;
+                    bookmarkItem.onclick = () => this.askAboutUrl(bookmark.url, bookmark.title);
+                    bookmarksList.appendChild(bookmarkItem);
+                }
+            });
+        } catch (error) {
+            console.log('Cannot load bookmarks:', error);
+        }
+    }
+
+    askAboutUrl(url, title) {
+        const input = document.getElementById('messageInput');
+        input.value = `Cosa puoi dirmi su questa pagina: ${title} (${url})`;
+        this.switchTab('chat');
+    }
+
+    async sendMessage() {
+        if (this.isProcessing) return;
+        
+        const input = document.getElementById('messageInput');
+        const message = input.value.trim();
+        
+        if (!message) return;
+        
+        this.isProcessing = true;
+        document.getElementById('sendBtn').disabled = true;
+        this.updateStatus('Elaborazione...');
+        
+        // Add user message
+        this.addMessage(message, 'user');
+        input.value = '';
+        
+        // Save to conversation
+        this.saveMessageToConversation(message, 'user');
+        
+        try {
+            // Get page context if autoCapture is enabled
+            let context = '';
+            if (document.getElementById('autoCapture').checked && this.currentTab) {
+                context = await this.capturePageContent();
+            }
+            
+            // Build prompt
+            const fullPrompt = this.buildPrompt(message, context);
+            
+            // Show loading
+            const loadingId = this.showLoading();
+            
+            // Call Claude via Puter.js
+            const model = document.getElementById('modelSelect').value;
+            const response = await puter.ai.chat(fullPrompt, {
+                model: model,
+                stream: true
+            });
+            
+            // Remove loading
+            this.removeLoading(loadingId);
+            
+            // Stream response
+            const responseDiv = this.addMessage('', 'assistant');
+            let fullResponse = '';
+            
+            for await (const part of response) {
+                if (part?.text) {
+                    fullResponse += part.text;
+                    responseDiv.querySelector('.message-content').textContent = fullResponse;
+                    this.scrollToBottom();
+                }
+            }
+            
+            // Save response
+            this.saveMessageToConversation(fullResponse, 'assistant');
+            
+        } catch (error) {
+            console.error('Error:', error);
+            this.removeLoading();
+            this.addMessage(`❌ Errore: ${error.message}`, 'system');
+        } finally {
+            this.isProcessing = false;
+            document.getElementById('sendBtn').disabled = false;
+            this.updateStatus('Connesso');
+        }
+    }
+
+    async capturePageContent() {
+        if (!this.currentTab) return '';
+        
+        try {
+            const results = await browser.tabs.executeScript(this.currentTab.id, {
+                code: `
+                    const content = document.body.innerText || document.body.textContent;
+                    const title = document.title;
+                    const url = window.location.href;
+                    
+                    // Try to get main content
+                    const article = document.querySelector('article, main, [role="main"], .content, #content');
+                    const mainContent = article ? article.innerText : content;
+                    
+                    ({
+                        title,
+                        url,
+                        content: mainContent.substring(0, 3000)
+                    })
+                `
+            });
+            
+            if (results && results[0]) {
+                const pageData = results[0];
+                return `Contesto dalla pagina "${pageData.title}":\n${pageData.content}\n\n`;
+            }
+        } catch (error) {
+            console.log('Cannot capture page:', error);
+        }
+        
+        return '';
+    }
+
+    buildPrompt(message, context = '') {
+        const conversation = this.conversations.find(c => c.id === this.currentConversationId);
+        let prompt = '';
+        
+        // Add conversation history
+        if (conversation && conversation.messages.length > 0) {
+            const history = conversation.messages.slice(-10).map(m => 
+                `${m.role}: ${m.content}`
+            ).join('\n');
+            prompt += `Conversazione precedente:\n${history}\n\n`;
+        }
+        
+        // Add page context
+        if (context) {
+            prompt += context;
+        }
+        
+        // Add current page info
+        if (this.currentTab) {
+            prompt += `Pagina corrente: ${this.currentTab.title} (${this.currentTab.url})\n\n`;
+        }
+        
+        // Add user message
+        prompt += `Utente: ${message}\n\nRispondi in italiano:`;
+        
+        return prompt;
+    }
+
+    addMessage(content, type) {
+        const container = document.getElementById('messages');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${type}`;
+        messageDiv.dataset.messageId = Date.now();
+        
+        const avatar = {
+            'user': 'U',
+            'assistant': 'C',
+            'system': '⚡'
+        }[type] || '?';
+        
+        messageDiv.innerHTML = `
+            <div class="message-avatar">${avatar}</div>
+            <div class="message-content">${this.escapeHtml(content)}</div>
+        `;
+        
+        container.appendChild(messageDiv);
+        this.scrollToBottom();
+        
+        return messageDiv;
+    }
+
+    showLoading() {
+        const container = document.getElementById('messages');
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'message assistant';
+        loadingDiv.id = `loading-${Date.now()}`;
+        loadingDiv.innerHTML = `
+            <div class="message-avatar">C</div>
+            <div class="message-content">
+                <div class="loading">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+        `;
+        container.appendChild(loadingDiv);
+        this.scrollToBottom();
+        return loadingDiv.id;
+    }
+
+    removeLoading(loadingId) {
+        const loading = document.getElementById(loadingId);
+        if (loading) loading.remove();
+    }
+
+    showWelcomeMessage() {
+        const welcomeMessage = `👋 Benvenuto nella Sidebar di Claude AI per Firefox!
+        
+Questa è una funzione esclusiva di Firefox che ti permette di:
+• Chattare con Claude mentre navighi
+• Analizzare pagine automaticamente
+• Accedere alla cronologia e preferiti
+• Mantenere la sidebar sempre aperta
+
+Usa i tab sopra per esplorare le funzionalità!`;
+        
+        this.addMessage(welcomeMessage, 'system');
+    }
+
+    createNewConversation() {
+        const id = Date.now().toString();
+        const conversation = {
+            id,
+            title: `Chat ${new Date().toLocaleString('it-IT')}`,
+            messages: [],
+            createdAt: new Date().toISOString()
+        };
+        
+        this.conversations.unshift(conversation);
+        this.currentConversationId = id;
+        this.saveConversations();
+    }
+
+    loadConversation(id) {
+        this.currentConversationId = id;
+        const conversation = this.conversations.find(c => c.id === id);
+        
+        if (conversation) {
+            document.getElementById('messages').innerHTML = '';
+            conversation.messages.forEach(msg => {
+                this.addMessage(msg.content, msg.role);
+            });
+        }
+    }
+
+    saveMessageToConversation(content, role) {
+        const conversation = this.conversations.find(c => c.id === this.currentConversationId);
+        if (conversation) {
+            conversation.messages.push({
+                content,
+                role,
+                timestamp: new Date().toISOString()
+            });
+            this.saveConversations();
+        }
+    }
+
+    async loadConversations() {
+        const data = await this.getStorageData('conversations', []);
+        this.conversations = data;
+    }
+
+    async saveConversations() {
+        await this.setStorageData('conversations', this.conversations);
+    }
+
+    async getStorageData(key, defaultValue = null) {
+        const result = await browser.storage.local.get(key);
+        return result[key] !== undefined ? result[key] : defaultValue;
+    }
+
+    async setStorageData(key, value) {
+        await browser.storage.local.set({ [key]: value });
+    }
+
+    async saveSettings() {
+        const settings = {
+            model: document.getElementById('modelSelect').value,
+            autoCapture: document.getElementById('autoCapture').checked,
+            darkMode: document.getElementById('darkMode').checked,
+            syncEnabled: document.getElementById('syncEnabled').checked
+        };
+        await this.setStorageData('settings', settings);
+    }
+
+    toggleTheme() {
+        const isDark = document.getElementById('darkMode').checked;
+        document.body.classList.toggle('light-theme', !isDark);
+        this.saveSettings();
+    }
+
+    toggleSync() {
+        const isEnabled = document.getElementById('syncEnabled').checked;
+        if (isEnabled) {
+            // Use browser.storage.sync instead of local
+            console.log('Sync enabled');
+        }
+        this.saveSettings();
+    }
+
+    updateStatus(text) {
+        document.getElementById('status').textContent = text;
+    }
+
+    updateModelIndicator(model) {
+        const modelNames = {
+            'claude-sonnet-4': 'Sonnet 4',
+            'claude-opus-4': 'Opus 4',
+            'claude-3-7-sonnet': 'Sonnet 3.7',
+            'claude-3-7-opus': 'Opus 3.7'
+        };
+        document.getElementById('currentModel').textContent = modelNames[model] || 'Claude';
+    }
+
+    scrollToBottom() {
+        const container = document.getElementById('messages');
+        container.scrollTop = container.scrollHeight;
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+}
+
+// Global functions for onclick handlers
+function switchTab(tabName) {
+    // Hide all panels
+    document.querySelectorAll('.tab-panel').forEach(panel => {
+        panel.classList.remove('active');
+    });
+    
+    // Remove active from all tabs
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    
+    // Show selected panel
+    document.getElementById(`${tabName}-panel`).classList.add('active');
+    
+    // Mark tab as active
+    event.target.classList.add('active');
+}
+
+function togglePin() {
+    // Firefox-specific: pin/unpin sidebar
+    browser.sidebarAction.toggle();
+}
+
+async function captureTab() {
+    sidebar.capturePageContent().then(content => {
+        if (content) {
+            const input = document.getElementById('messageInput');
+            input.value = 'Analizza il contenuto di questa pagina';
+            switchTab('chat');
+        }
+    });
+}
+
+async function summarizePage() {
+    const input = document.getElementById('messageInput');
+    input.value = 'Riassumi il contenuto principale di questa pagina in modo conciso';
+    switchTab('chat');
+    sidebar.sendMessage();
+}
+
+async function translatePage() {
+    const input = document.getElementById('messageInput');
+    input.value = 'Traduci i punti chiave di questa pagina in italiano';
+    switchTab('chat');
+    sidebar.sendMessage();
+}
+
+async function extractData() {
+    const input = document.getElementById('messageInput');
+    input.value = 'Estrai i dati strutturati più importanti da questa pagina (date, numeri, nomi, etc.)';
+    switchTab('chat');
+    sidebar.sendMessage();
+}
+
+async function searchInPage() {
+    const query = prompt('Cosa vuoi cercare in questa pagina?');
+    if (query) {
+        const input = document.getElementById('messageInput');
+        input.value = `Cerca informazioni su "${query}" in questa pagina`;
+        switchTab('chat');
+        sidebar.sendMessage();
+    }
+}
+
+async function analyzePage() {
+    const input = document.getElementById('messageInput');
+    input.value = 'Analizza questa pagina: tema principale, struttura, qualità del contenuto e suggerimenti';
+    switchTab('chat');
+    sidebar.sendMessage();
+}
+
+async function extractText() {
+    if (sidebar.currentTab) {
+        const content = await sidebar.capturePageContent();
+        const input = document.getElementById('messageInput');
+        input.value = 'Estrai e formatta il testo principale da questa pagina';
+        switchTab('chat');
+    }
+}
+
+async function saveToNote() {
+    const content = await sidebar.capturePageContent();
+    const note = {
+        url: sidebar.currentTab.url,
+        title: sidebar.currentTab.title,
+        content: content,
+        timestamp: new Date().toISOString()
+    };
+    
+    // Save to storage
+    const notes = await sidebar.getStorageData('notes', []);
+    notes.push(note);
+    await sidebar.setStorageData('notes', notes);
+    
+    alert('Nota salvata!');
+}
+
+// Initialize sidebar when DOM is ready
+let sidebar;
+document.addEventListener('DOMContentLoaded', () => {
+    sidebar = new ClaudeSidebar();
+    window.sidebar = sidebar; // Make globally accessible
+});
