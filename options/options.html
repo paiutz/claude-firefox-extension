@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Claude AI - Impostazioni</title>
+    <style>
+        /* Firefox native look */
+        body {
+            font-family: -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .setting-group {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #d7d7db;
+            border-radius: 4px;
+        }
+        
+        label {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+        }
+        
+        input[type="checkbox"] {
+            margin-right: 10px;
+        }
+        
+        button {
+            background: #0060df;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background: #003eaa;
+        }
+    </style>
+</head>
+<body>
+    <h1>⚙️ Impostazioni Claude AI per Firefox</h1>
+    
+    <div class="setting-group">
+        <h2>Modello AI</h2>
+        <select id="model">
+            <option value="claude-sonnet-4">Claude Sonnet 4</option>
+            <option value="claude-opus-4">Claude Opus 4</option>
+        </select>
+    </div>
+    
+    <div class="setting-group">
+        <h2>Funzionalità</h2>
+        <label>
+            <input type="checkbox" id="autoCapture">
+            Auto-cattura contenuto pagine
+        </label>
+        <label>
+            <input type="checkbox" id="sidebarDefault">
+            Apri sidebar per default
+        </label>
+        <label>
+            <input type="checkbox" id="syncEnabled">
+            Sincronizza con Firefox Sync
+        </label>
+    </div>
+    
+    <div class="setting-group">
+        <h2>Privacy</h2>
+        <label>
+            <input type="checkbox" id="privateMode">
+            Non salvare in modalità privata
+        </label>
+        <label>
+            <input type="checkbox" id="containerSupport">
+            Supporto Container Tabs
+        </label>
+    </div>
+    
+    <button onclick="save()">Salva Impostazioni</button>
+    
+    <script>
+        function save() {
+            const settings = {
+                model: document.getElementById('model').value,
+                autoCapture: document.getElementById('autoCapture').checked,
+                sidebarDefault: document.getElementById('sidebarDefault').checked,
+                syncEnabled: document.getElementById('syncEnabled').checked,
+                privateMode: document.getElementById('privateMode').checked,
+                containerSupport: document.getElementById('containerSupport').checked
+            };
+            
+            // Usa sync se abilitato
+            const storage = settings.syncEnabled ? 
+                browser.storage.sync : browser.storage.local;
+            
+            storage.set(settings).then(() => {
+                alert('Impostazioni salvate!');
+            });
+        }
+        
+        // Carica impostazioni
+        browser.storage.local.get().then(settings => {
+            for (let key in settings) {
+                const element = document.getElementById(key);
+                if (element) {
+                    if (element.type === 'checkbox') {
+                        element.checked = settings[key];
+                    } else {
+                        element.value = settings[key];
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
