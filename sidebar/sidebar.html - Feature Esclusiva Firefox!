@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude AI Sidebar</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --firefox-blue: #0060df;
+            --firefox-purple: #9400ff;
+            --firefox-dark: #20123a;
+            --primary: #6B5B95;
+            --secondary: #88B0D3;
+            --accent: #FF6F61;
+            --success: #42A5F5;
+            --warning: #FFA726;
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-chat: #0f3460;
+            --text-primary: #FFFFFF;
+            --text-secondary: #B0BEC5;
+            --border: #37474F;
+        }
+
+        body {
+            width: 100%;
+            height: 100vh;
+            font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(180deg, var(--bg-primary) 0%, var(--firefox-dark) 100%);
+            color: var(--text-primary);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Firefox Native Look */
+        .firefox-header {
+            background: var(--firefox-blue);
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        .firefox-logo {
+            width: 24px;
+            height: 24px;
+            background: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: var(--firefox-blue);
+        }
+
+        .header-title {
+            flex: 1;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        /* Tab System */
+        .tabs {
+            display: flex;
+            background: var(--bg-secondary);
+            border-bottom: 2px solid var(--firefox-purple);
+            overflow-x: auto;
+        }
+
+        .tab {
+            padding: 10px 16px;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 13px;
+            white-space: nowrap;
+            transition: all 0.2s;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+        }
+
+        .tab:hover {
+            background: rgba(255,255,255,0.05);
+            color: var(--text-primary);
+        }
+
+        .tab.active {
+            color: white;
+            background: var(--firefox-purple);
+            border-bottom-color: var(--accent);
+        }
+
+        /* Tab Panels */
+        .tab-panel {
+            display: none;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .tab-panel.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Chat Panel */
+        .chat-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            background: var(--bg-primary);
+        }
+
+        .message {
+            margin-bottom: 12px;
+            display: flex;
+            gap: 8px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .message-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        .message.user .message-avatar {
+            background: linear-gradient(135deg, var(--accent) 0%, #FF8A80 100%);
+        }
+
+        .message.assistant .message-avatar {
+            background: linear-gradient(135deg, var(--firefox-purple) 0%, var(--firefox-blue) 100%);
+        }
+
+        .message-content {
+            flex: 1;
+            background: var(--bg-chat);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.5;
+            border: 1px solid var(--border);
+        }
+
+        .message.user .message-content {
+            background: rgba(255, 111, 97, 0.1);
+            border-color: rgba(255, 111, 97, 0.3);
+        }
+
+        /* Input Area */
+        .input-area {
+            padding: 12px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+        }
+
+        .input-container {
+            display: flex;
+            gap: 8px;
+        }
+
+        .input-field {
+            flex: 1;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            resize: none;
+            outline: none;
+        }
+
+        .input-field:focus {
+            border-color: var(--firefox-purple);
+            box-shadow: 0 0 8px rgba(148, 0, 255, 0.3);
+        }
+
+        .send-btn {
+            width: 36px;
+            height: 36px;
+            background: var(--firefox-purple);
+            border: none;
+            border-radius: 50%;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .send-btn:hover {
+            background: var(--firefox-blue);
+            transform: scale(1.1);
+        }
+
+        .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Page Info Panel */
+        .page-info-panel {
+            padding: 16px;
+        }
+
+        .page-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+
+        .page-title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+            color: var(--text-primary);
+        }
+
+        .page-url {
+            font-size: 11px;
+            color: var(--text-secondary);
+            word-break: break-all;
+        }
+
+        .page-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .action-btn {
+            flex: 1;
+            padding: 6px 12px;
+            background: var(--bg-chat);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            border-radius: 16px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .action-btn:hover {
+            background: var(--firefox-purple);
+            border-color: var(--firefox-purple);
+        }
+
+        /* History Panel */
+        .history-panel {
+            padding: 12px;
+            overflow-y: auto;
+        }
+
+        .history-item {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .history-item:hover {
+            background: var(--bg-chat);
+            transform: translateX(4px);
+        }
+
+        .history-date {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .history-preview {
+            font-size: 13px;
+            color: var(--text-primary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Settings Panel */
+        .settings-panel {
+            padding: 16px;
+            overflow-y: auto;
+        }
+
+        .setting-group {
+            margin-bottom: 16px;
+        }
+
+        .setting-label {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+        }
+
+        .setting-control {
+            width: 100%;
+            padding: 8px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .toggle-switch {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .switch {
+            position: relative;
+            width: 42px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background: var(--bg-chat);
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background: var(--firefox-purple);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(18px);
+        }
+
+        /* Quick Actions */
+        .quick-actions {
+            padding: 8px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+        }
+
+        .quick-btn {
+            padding: 4px 10px;
+            background: var(--bg-chat);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            color: var(--text-secondary);
+            font-size: 11px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+
+        .quick-btn:hover {
+            background: var(--firefox-purple);
+            color: white;
+            border-color: var(--firefox-purple);
+        }
+
+        /* Loading Animation */
+        .loading {
+            display: flex;
+            gap: 4px;
+            padding: 8px;
+        }
+
+        .loading span {
+            width: 6px;
+            height: 6px;
+            background: var(--firefox-purple);
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .loading span:nth-child(1) { animation-delay: -0.32s; }
+        .loading span:nth-child(2) { animation-delay: -0.16s; }
+        .loading span:nth-child(3) { animation-delay: 0; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+
+        /* Firefox Scrollbar */
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: var(--firefox-purple) var(--bg-secondary);
+        }
+
+        /* Status Bar */
+        .status-bar {
+            padding: 6px 12px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 4px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .model-indicator {
+            background: var(--firefox-purple);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 10px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Firefox Header -->
+    <div class="firefox-header">
+        <div class="firefox-logo">C</div>
+        <div class="header-title">Claude AI Assistant</div>
+        <button onclick="togglePin()" title="Pin Sidebar" style="background: none; border: none; color: white; cursor: pointer;">📌</button>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="quick-actions">
+        <button class="quick-btn" onclick="captureTab()">📷 Cattura</button>
+        <button class="quick-btn" onclick="summarizePage()">📝 Riassumi</button>
+        <button class="quick-btn" onclick="translatePage()">🌐 Traduci</button>
+        <button class="quick-btn" onclick="extractData()">📊 Estrai Dati</button>
+        <button class="quick-btn" onclick="searchInPage()">🔍 Cerca</button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab('chat')">💬 Chat</button>
+        <button class="tab" onclick="switchTab('page')">📄 Pagina</button>
+        <button class="tab" onclick="switchTab('history')">📚 Storia</button>
+        <button class="tab" onclick="switchTab('bookmarks')">⭐ Preferiti</button>
+        <button class="tab" onclick="switchTab('settings')">⚙️ Opzioni</button>
+    </div>
+
+    <!-- Tab Panels -->
+    
+    <!-- Chat Panel -->
+    <div class="tab-panel active" id="chat-panel">
+        <div class="chat-panel">
+            <div class="messages-container" id="messages">
+                <!-- Messages will be added here -->
+            </div>
+            <div class="input-area">
+                <div class="input-container">
+                    <input type="text" class="input-field" id="messageInput" placeholder="Chiedi qualcosa..." />
+                    <button class="send-btn" id="sendBtn">➤</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Page Info Panel -->
+    <div class="tab-panel" id="page-panel">
+        <div class="page-info-panel">
+            <div class="page-card">
+                <div class="page-title" id="pageTitle">Caricamento...</div>
+                <div class="page-url" id="pageUrl">...</div>
+                <div class="page-actions">
+                    <button class="action-btn" onclick="analyzePage()">Analizza</button>
+                    <button class="action-btn" onclick="extractText()">Estrai Testo</button>
+                    <button class="action-btn" onclick="saveToNote()">Salva Nota</button>
+                </div>
+            </div>
+            
+            <div class="page-card">
+                <div class="setting-label">Statistiche Pagina</div>
+                <div id="pageStats" style="font-size: 12px; color: var(--text-secondary);">
+                    <!-- Stats will be added here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- History Panel -->
+    <div class="tab-panel" id="history-panel">
+        <div class="history-panel" id="historyList">
+            <!-- History items will be added here -->
+        </div>
+    </div>
+
+    <!-- Bookmarks Panel -->
+    <div class="tab-panel" id="bookmarks-panel">
+        <div class="history-panel" id="bookmarksList">
+            <!-- Bookmarks will be added here -->
+        </div>
+    </div>
+
+    <!-- Settings Panel -->
+    <div class="tab-panel" id="settings-panel">
+        <div class="settings-panel">
+            <div class="setting-group">
+                <div class="setting-label">Modello AI</div>
+                <select class="setting-control" id="modelSelect">
+                    <option value="claude-sonnet-4">Claude Sonnet 4 (Veloce)</option>
+                    <option value="claude-opus-4">Claude Opus 4 (Potente)</option>
+                    <option value="claude-3-7-sonnet">Claude 3.7 Sonnet</option>
+                    <option value="claude-3-7-opus">Claude 3.7 Opus</option>
+                </select>
+            </div>
+            
+            <div class="setting-group">
+                <div class="toggle-switch">
+                    <label class="switch">
+                        <input type="checkbox" id="autoCapture">
+                        <span class="slider"></span>
+                    </label>
+                    <span class="setting-label">Auto-cattura pagine</span>
+                </div>
+            </div>
+            
+            <div class="setting-group">
+                <div class="toggle-switch">
+                    <label class="switch">
+                        <input type="checkbox" id="darkMode" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span class="setting-label">Tema scuro</span>
+                </div>
+            </div>
+            
+            <div class="setting-group">
+                <div class="toggle-switch">
+                    <label class="switch">
+                        <input type="checkbox" id="syncEnabled">
+                        <span class="slider"></span>
+                    </label>
+                    <span class="setting-label">Sincronizza tra dispositivi</span>
+                </div>
+            </div>
+            
+            <div class="setting-group">
+                <button class="action-btn" style="width: 100%; background: var(--firefox-purple); color: white;">
+                    Esporta Conversazioni
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Bar -->
+    <div class="status-bar">
+        <div>
+            <span class="status-dot"></span>
+            <span id="status">Connesso</span>
+        </div>
+        <div class="model-indicator" id="currentModel">Sonnet 4</div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://js.puter.com/v2/"></script>
+    <script src="sidebar.js"></script>
+</body>
+</html>
