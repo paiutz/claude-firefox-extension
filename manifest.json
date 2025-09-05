@@ -1,0 +1,115 @@
+{
+  "manifest_version": 2,
+  "name": "Claude AI Assistant - Free & Unlimited",
+  "version": "1.0.0",
+  "description": "Claude AI nel tuo Firefox con accesso web, sidebar e features avanzate",
+  "author": "Your Name",
+  
+  "permissions": [
+    "activeTab",
+    "storage",
+    "contextMenus",
+    "clipboardWrite",
+    "clipboardRead",
+    "notifications",
+    "tabs",
+    "<all_urls>",
+    "webRequest",
+    "webRequestBlocking",
+    "bookmarks",
+    "history",
+    "downloads",
+    "sidebarAction"
+  ],
+  
+  "background": {
+    "scripts": ["background/background.js"],
+    "persistent": false
+  },
+  
+  "browser_action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "96": "icons/icon-96.png"
+    },
+    "default_title": "Claude AI Assistant",
+    "browser_style": true
+  },
+  
+  "sidebar_action": {
+    "default_panel": "sidebar/sidebar.html",
+    "default_icon": "icons/icon-48.png",
+    "default_title": "Claude AI Sidebar",
+    "open_at_install": false
+  },
+  
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["lib/puter-loader.js", "content/content.js"],
+      "css": ["content/floating.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  
+  "options_ui": {
+    "page": "options/options.html",
+    "browser_style": true,
+    "open_in_tab": true
+  },
+  
+  "commands": {
+    "_execute_browser_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+C",
+        "mac": "Command+Shift+C"
+      },
+      "description": "Apri Claude AI"
+    },
+    "_execute_sidebar_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "Toggle Claude Sidebar"
+    },
+    "quick_ask": {
+      "suggested_key": {
+        "default": "Alt+C"
+      },
+      "description": "Chiedi a Claude sul testo selezionato"
+    },
+    "capture_page": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+A"
+      },
+      "description": "Cattura e analizza pagina"
+    }
+  },
+  
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png"
+  },
+  
+  "web_accessible_resources": [
+    "lib/puter-loader.js",
+    "content/floating.css",
+    "icons/*"
+  ],
+  
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "claude-assistant@example.com",
+      "strict_min_version": "91.0"
+    }
+  },
+  
+  "content_security_policy": "script-src 'self' https://js.puter.com 'unsafe-eval'; object-src 'self'"
+}
