@@ -1,0 +1,616 @@
+// ============================================
+// background/background.js - Firefox Background Script
+// ============================================
+
+console.log('Claude AI Firefox Extension - Background Script Started');
+
+// Extension installation/update handler
+browser.runtime.onInstalled.addListener((details) => {
+    console.log('Extension installed/updated:', details);
+    
+    // Set default settings
+    browser.storage.local.set({
+        webSearchEnabled: false,
+        defaultModel: 'claude-sonnet-4',
+        firstTime: true,
+        conversations: [],
+        sidebarPinned: false,
+        autoCapture: false,
+        theme: 'dark'
+    });
+    
+    // Create context menus
+    createContextMenus();
+    
+    // Show onboarding page on first install
+    if (details.reason === 'install') {
+        browser.tabs.create({
+            url: browser.runtime.getURL('options/options.html')
+        });
+        
+        // Show sidebar on first install
+        browser.sidebarAction.open();
+    }
+});
+
+// Create context menu items
+function createContextMenus() {
+    // Main context menu
+    browser.contextMenus.create({
+        id: 'claude-main',
+        title: '🤖 Claude AI',
+        contexts: ['all']
+    });
+    
+    // Selection context menus
+    browser.contextMenus.create({
+        id: 'claude-explain',
+        parentId: 'claude-main',
+        title: '💡 Spiega: "%s"',
+        contexts: ['selection']
+    });
+    
+    browser.contextMenus.create({
+        id: 'claude-translate',
+        parentId: 'claude-main', 
+        title: '🌐 Traduci: "%s"',
+        contexts: ['selection']
+    });
+    
+    browser.contextMenus.create({
+        id: 'claude-improve',
+        parentId: 'claude-main',
+        title: '✨ Migliora: "%s"',
+        contexts: ['selection']
+    });
+    
+    browser.contextMenus.create({
+        id: 'claude-summarize-selection',
+        parentId: 'claude-main',
+        title: '📝 Riassumi: "%s"',
+        contexts: ['selection']
+    });
+    
+    // Page context menus
+    browser.contextMenus.create({
+        id: 'claude-summarize-page',
+        parentId: 'claude-main',
+        title: '📄 Riassumi questa pagina',
+        contexts: ['page', 'frame']
+    });
+    
+    browser.contextMenus.create({
+        id: 'claude-analyze-page',
+        parentId: 'claude-main',
+        title: '📊 Analizza questa pagina',
+        contexts: ['page', 'frame']
+    });
+    
+    // Image context menu
+    browser.contextMenus.create({
+        id: 'claude-analyze-image',
+        parentId: 'claude-main',
+        title: '🖼️ Analizza questa immagine',
+        contexts: ['image']
+    });
+    
+    // Link context menu
+    browser.contextMenus.create({
+        id: 'claude-analyze-link',
+        parentId: 'claude-main',
+        title: '🔗 Analizza questo link',
+        contexts: ['link']
+    });
+    
+    // Video/Audio context menus
+    browser.contextMenus.create({
+        id: 'claude-transcribe',
+        parentId: 'claude-main',
+        title: '🎬 Trascrivi media',
+        contexts: ['video', 'audio']
+    });
+}
+
+// Handle context menu clicks
+browser.contextMenus.onClicked.addListener(async (info, tab) => {
+    console.log('Context menu clicked:', info.menuItemId);
+    
+    switch(info.menuItemId) {
+        case 'claude-explain':
+            handleTextAction(info.selectionText, 'explain', tab);
+            break;
+            
+        case 'claude-translate':
+            handleTextAction(info.selectionText, 'translate', tab);
+            break;
+            
+        case 'claude-improve':
+            handleTextAction(info.selectionText, 'improve', tab);
+            break;
+            
+        case 'claude-summarize-selection':
+            handleTextAction(info.selectionText, 'summarize', tab);
+            break;
+            
+        case 'claude-summarize-page':
+            handlePageAction('summarize', tab);
+            break;
+            
+        case 'claude-analyze-page':
+            handlePageAction('analyze', tab);
+            break;
+            
+        case 'claude-analyze-image':
+            handleImageAction(info.srcUrl, tab);
+            break;
+            
+        case 'claude-analyze-link':
+            handleLinkAction(info.linkUrl, tab);
+            break;
+            
+        case 'claude-transcribe':
+            handleMediaAction(info.srcUrl, tab);
+            break;
+    }
+});
+
+// Text action handler
+async function handleTextAction(text, action, tab) {
+    // Send to content script to show floating assistant
+    browser.tabs.sendMessage(tab.id, {
+        action: 'showFloatingAssistant',
+        text: text,
+        promptAction: action
+    }).catch(() => {
+        // If content script not loaded, inject it first
+        injectContentScript(tab.id).then(() => {
+            browser.tabs.sendMessage(tab.id, {
+                action: 'showFloatingAssistant',
+                text: text,
+                promptAction: action
+            });
+        });
+    });
+}
+
+// Page action handler
+async function handlePageAction(action, tab) {
+    // Get page content first
+    const content = await getPageContent(tab.id);
+    
+    // Open sidebar with the action
+    browser.sidebarAction.open();
+    
+    // Send message to sidebar
+    setTimeout(() => {
+        browser.runtime.sendMessage({
+            action: 'pageAction',
+            pageAction: action,
+            content: content,
+            tab: tab
+        });
+    }, 500);
+}
+
+// Image action handler
+async function handleImageAction(imageUrl, tab) {
+    browser.tabs.sendMessage(tab.id, {
+        action: 'showFloatingAssistant',
+        text: `Analizza questa immagine: ${imageUrl}`,
+        imageUrl: imageUrl
+    }).catch(() => {
+        injectContentScript(tab.id).then(() => {
+            browser.tabs.sendMessage(tab.id, {
+                action: 'showFloatingAssistant',
+                text: `Analizza questa immagine: ${imageUrl}`,
+                imageUrl: imageUrl
+            });
+        });
+    });
+}
+
+// Link action handler
+async function handleLinkAction(linkUrl, tab) {
+    browser.sidebarAction.open();
+    
+    setTimeout(() => {
+        browser.runtime.sendMessage({
+            action: 'analyzeLinkRequest',
+            url: linkUrl
+        });
+    }, 500);
+}
+
+// Media action handler
+async function handleMediaAction(mediaUrl, tab) {
+    browser.notifications.create({
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('icons/icon-48.png'),
+        title: 'Claude AI',
+        message: 'La trascrizione media non è ancora disponibile in questa versione'
+    });
+}
+
+// Get page content
+async function getPageContent(tabId) {
+    try {
+        const results = await browser.tabs.executeScript(tabId, {
+            code: `
+                ({
+                    title: document.title,
+                    url: window.location.href,
+                    content: document.body.innerText,
+                    selection: window.getSelection().toString()
+                })
+            `
+        });
+        return results[0] || {};
+    } catch (error) {
+        console.error('Cannot get page content:', error);
+        return {};
+    }
+}
+
+// Inject content script dynamically
+async function injectContentScript(tabId) {
+    try {
+        await browser.tabs.executeScript(tabId, {
+            file: 'content/content.js'
+        });
+        await browser.tabs.insertCSS(tabId, {
+            file: 'content/floating.css'
+        });
+    } catch (error) {
+        console.error('Cannot inject content script:', error);
+    }
+}
+
+// Handle keyboard commands
+browser.commands.onCommand.addListener((command) => {
+    console.log('Command received:', command);
+    
+    switch(command) {
+        case 'quick_ask':
+            handleQuickAsk();
+            break;
+            
+        case 'capture_page':
+            handleCapturePage();
+            break;
+    }
+});
+
+// Quick ask handler
+async function handleQuickAsk() {
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    
+    // Get selected text
+    const selection = await browser.tabs.executeScript(tab.id, {
+        code: 'window.getSelection().toString()'
+    });
+    
+    if (selection && selection[0]) {
+        browser.tabs.sendMessage(tab.id, {
+            action: 'showFloatingAssistant',
+            text: selection[0]
+        }).catch(() => {
+            injectContentScript(tab.id).then(() => {
+                browser.tabs.sendMessage(tab.id, {
+                    action: 'showFloatingAssistant',
+                    text: selection[0]
+                });
+            });
+        });
+    } else {
+        // Open popup if no selection
+        browser.browserAction.openPopup();
+    }
+}
+
+// Capture page handler
+async function handleCapturePage() {
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    const content = await getPageContent(tab.id);
+    
+    // Open sidebar with captured content
+    browser.sidebarAction.open();
+    
+    setTimeout(() => {
+        browser.runtime.sendMessage({
+            action: 'pageCapture',
+            content: content
+        });
+    }, 500);
+}
+
+// Message handler for communication between components
+browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    console.log('Message received in background:', request);
+    
+    switch(request.action) {
+        case 'askClaude':
+            // This would need to communicate with Puter.js
+            // For now, return a mock response
+            setTimeout(() => {
+                sendResponse({
+                    result: 'Risposta da Claude tramite background script'
+                });
+            }, 1000);
+            return true; // Keep channel open for async response
+            
+        case 'openSidebar':
+            browser.sidebarAction.open();
+            break;
+            
+        case 'openOptions':
+            browser.runtime.openOptionsPage();
+            break;
+            
+        case 'captureTab':
+            browser.tabs.captureVisibleTab().then(dataUrl => {
+                sendResponse({ screenshot: dataUrl });
+            });
+            return true;
+            
+        case 'searchHistory':
+            browser.history.search({
+                text: request.query,
+                maxResults: 10
+            }).then(results => {
+                sendResponse({ results });
+            });
+            return true;
+            
+        case 'searchBookmarks':
+            browser.bookmarks.search(request.query).then(results => {
+                sendResponse({ results });
+            });
+            return true;
+    }
+});
+
+// Tab update listener
+browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'complete') {
+        // Check if auto-capture is enabled
+        browser.storage.local.get('autoCapture').then(data => {
+            if (data.autoCapture) {
+                // Notify sidebar if open
+                browser.runtime.sendMessage({
+                    action: 'tabUpdated',
+                    tab: tab
+                });
+            }
+        });
+    }
+});
+
+// Web request listener for intercepting and modifying requests (Firefox-specific power!)
+browser.webRequest.onBeforeRequest.addListener(
+    function(details) {
+        // Could modify or redirect requests here
+        // Useful for privacy features or ad blocking
+        return { cancel: false };
+    },
+    { urls: ["<all_urls>"] },
+    ["blocking"]
+);
+
+// Download listener for saving conversations
+browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'downloadConversation') {
+        const blob = new Blob([request.content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        
+        browser.downloads.download({
+            url: url,
+            filename: `claude-conversation-${Date.now()}.txt`,
+            saveAs: true
+        }).then(() => {
+            URL.revokeObjectURL(url);
+            sendResponse({ success: true });
+        });
+        
+        return true;
+    }
+});
+
+// Badge management
+function updateBadge(text, color = '#FF6F61') {
+    browser.browserAction.setBadgeText({ text: text });
+    browser.browserAction.setBadgeBackgroundColor({ color: color });
+}
+
+// Notification helper
+function showNotification(title, message) {
+    browser.notifications.create({
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('icons/icon-48.png'),
+        title: title,
+        message: message
+    });
+}
+
+// ============================================
+// lib/puter-loader.js - Puter.js Loader for Firefox
+// ============================================
+const puterLoader = `
+// Dynamically load Puter.js in Firefox extension context
+(function() {
+    if (typeof puter !== 'undefined') return;
+    
+    const script = document.createElement('script');
+    script.src = 'https://js.puter.com/v2/';
+    script.onload = function() {
+        console.log('Puter.js loaded successfully in Firefox');
+        window.dispatchEvent(new CustomEvent('puterLoaded'));
+    };
+    script.onerror = function() {
+        console.error('Failed to load Puter.js');
+    };
+    
+    (document.head || document.documentElement).appendChild(script);
+})();
+`;
+
+// ============================================
+// content/floating.css - Styles for floating assistant
+// ============================================
+const floatingCSS = `
+#claude-floating-assistant {
+    position: fixed !important;
+    bottom: 20px !important;
+    right: 20px !important;
+    width: 380px !important;
+    max-height: 600px !important;
+    background: linear-gradient(135deg, #0060df 0%, #9400ff 100%) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4) !important;
+    z-index: 2147483647 !important;
+    font-family: -apple-system, sans-serif !important;
+    animation: slideInFirefox 0.3s ease !important;
+}
+
+@keyframes slideInFirefox {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+#claude-floating-assistant * {
+    box-sizing: border-box !important;
+}
+
+#claude-floating-header {
+    padding: 12px 16px !important;
+    color: white !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    cursor: move !important;
+    user-select: none !important;
+}
+
+#claude-floating-content {
+    background: white !important;
+    padding: 16px !important;
+    border-radius: 0 0 12px 12px !important;
+    max-height: 500px !important;
+    overflow-y: auto !important;
+}
+
+#claude-floating-input {
+    width: 100% !important;
+    padding: 10px !important;
+    border: 2px solid #e0e0e0 !important;
+    border-radius: 8px !important;
+    font-size: 14px !important;
+    margin-bottom: 12px !important;
+    resize: vertical !important;
+    min-height: 60px !important;
+    font-family: inherit !important;
+}
+
+#claude-floating-input:focus {
+    outline: none !important;
+    border-color: #0060df !important;
+    box-shadow: 0 0 0 3px rgba(0, 96, 223, 0.2) !important;
+}
+
+.claude-quick-actions {
+    display: flex !important;
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+    margin-bottom: 12px !important;
+}
+
+.claude-quick-btn {
+    padding: 6px 12px !important;
+    background: #f0f0f0 !important;
+    border: none !important;
+    border-radius: 16px !important;
+    font-size: 12px !important;
+    cursor: pointer !important;
+    transition: all 0.2s !important;
+    color: #333 !important;
+}
+
+.claude-quick-btn:hover {
+    background: #0060df !important;
+    color: white !important;
+}
+
+#claude-floating-response {
+    padding: 12px !important;
+    background: #f8f9fa !important;
+    border-radius: 8px !important;
+    font-size: 14px !important;
+    line-height: 1.6 !important;
+    white-space: pre-wrap !important;
+    max-height: 350px !important;
+    overflow-y: auto !important;
+    color: #333 !important;
+}
+
+#claude-close-btn {
+    background: rgba(255,255,255,0.2) !important;
+    border: none !important;
+    color: white !important;
+    width: 24px !important;
+    height: 24px !important;
+    border-radius: 50% !important;
+    cursor: pointer !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 16px !important;
+    line-height: 1 !important;
+}
+
+#claude-close-btn:hover {
+    background: rgba(255,255,255,0.3) !important;
+}
+
+.claude-loading {
+    display: flex !important;
+    gap: 4px !important;
+    padding: 12px !important;
+    justify-content: center !important;
+}
+
+.claude-loading span {
+    width: 8px !important;
+    height: 8px !important;
+    background: #0060df !important;
+    border-radius: 50% !important;
+    animation: claudeBounce 1.4s infinite ease-in-out both !important;
+}
+
+.claude-loading span:nth-child(1) { animation-delay: -0.32s !important; }
+.claude-loading span:nth-child(2) { animation-delay: -0.16s !important; }
+.claude-loading span:nth-child(3) { animation-delay: 0 !important; }
+
+@keyframes claudeBounce {
+    0%, 80%, 100% { 
+        transform: scale(0);
+        opacity: 0.5;
+    }
+    40% { 
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* Firefox-specific optimizations */
+@-moz-document url-prefix() {
+    #claude-floating-assistant {
+        scrollbar-width: thin;
+        scrollbar-color: #9400ff #f0f0f0;
+    }
+}
+`;
